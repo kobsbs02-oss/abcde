@@ -1,0 +1,1633 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>학생 상담 신청 및 기록 관리 시스템</title>
+    <link
+      rel="stylesheet"
+      as="style"
+      crossorigin
+      href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: [
+                'Pretendard',
+                '-apple-system',
+                'BlinkMacSystemFont',
+                'system-ui',
+                'Roboto',
+                'Helvetica Neue',
+                'Segoe UI',
+                'Apple SD Gothic Neo',
+                'Noto Sans KR',
+                'Malgun Gothic',
+                'sans-serif',
+              ],
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        background-color: #f8fafc;
+        overflow-x: hidden;
+      }
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: #f1f5f9; }
+      ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+      ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+    <!-- React 18 Production UMD -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Lucide Icons UMD -->
+    <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+    <!-- Babel Standalone for JSX -->
+    <script src="https://unpkg.com/@babel/standalone@7.26.0/babel.min.js"></script>
+  </head>
+  <body class="bg-slate-50 text-slate-900 antialiased">
+    <div id="root"></div>
+
+    <script type="text/babel" data-presets="react">
+      const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+      // -----------------------------------------------------------------------
+      // Streamlit Component Communication Bridge (Official PostMessage Protocol)
+      // -----------------------------------------------------------------------
+      const Streamlit = (() => {
+        const RENDER_EVENT = 'streamlit:render';
+        const target = new EventTarget();
+
+        window.addEventListener('message', (event) => {
+          if (!event.data || event.data.type !== RENDER_EVENT) return;
+          target.dispatchEvent(
+            new CustomEvent(RENDER_EVENT, {
+              detail: {
+                args: event.data.args || {},
+                disabled: Boolean(event.data.disabled),
+                theme: event.data.theme || null,
+              },
+            })
+          );
+        });
+
+        return {
+          RENDER_EVENT,
+          events: {
+            addEventListener: (type, listener) => target.addEventListener(type, listener),
+            removeEventListener: (type, listener) => target.removeEventListener(type, listener),
+          },
+          setComponentReady: () => {
+            window.parent.postMessage(
+              { isStreamlitMessage: true, type: 'streamlit:componentReady', apiVersion: 1 },
+              '*'
+            );
+          },
+          setFrameHeight: (height) => {
+            const h = height || document.documentElement.scrollHeight;
+            window.parent.postMessage(
+              { isStreamlitMessage: true, type: 'streamlit:setFrameHeight', height: h },
+              '*'
+            );
+          },
+          setComponentValue: (value) => {
+            window.parent.postMessage(
+              { isStreamlitMessage: true, type: 'streamlit:setComponentValue', value, dataType: 'json' },
+              '*'
+            );
+          },
+        };
+      })();
+
+      // -----------------------------------------------------------------------
+      // Lucide React Icon Wrapper (maps Lucide-React components to Lucide UMD)
+      // -----------------------------------------------------------------------
+      function makeIcon(iconName) {
+        return function LucideIcon({ className = 'w-4 h-4', ...props }) {
+          const iconDef = window.lucide && window.lucide.icons ? window.lucide.icons[iconName] : null;
+          if (!iconDef) return <span className={className} {...props} />;
+          return (
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={className}
+              {...props}
+            >
+              {iconDef.map(([tag, attrs], idx) => React.createElement(tag, { ...attrs, key: idx }))}
+            </svg>
+          );
+        };
+      }
+
+      const GraduationCap = makeIcon('GraduationCap');
+      const ClipboardEdit = makeIcon('ClipboardEdit');
+      const ShieldCheck = makeIcon('ShieldCheck');
+      const Search = makeIcon('Search');
+      const CheckCircle2 = makeIcon('CheckCircle2');
+      const AlertCircle = makeIcon('AlertCircle');
+      const X = makeIcon('X');
+      const User = makeIcon('User');
+      const Hash = makeIcon('Hash');
+      const Phone = makeIcon('Phone');
+      const Calendar = makeIcon('Calendar');
+      const Clock = makeIcon('Clock');
+      const Tag = makeIcon('Tag');
+      const Video = makeIcon('Video');
+      const MessageSquareText = makeIcon('MessageSquareText');
+      const Send = makeIcon('Send');
+      const ArrowRight = makeIcon('ArrowRight');
+      const Info = makeIcon('Info');
+      const XCircle = makeIcon('XCircle');
+      const FileText = makeIcon('FileText');
+      const MessageSquare = makeIcon('MessageSquare');
+      const FileEdit = makeIcon('FileEdit');
+      const ListChecks = makeIcon('ListChecks');
+      const Lock = makeIcon('Lock');
+      const Save = makeIcon('Save');
+      const LogOut = makeIcon('LogOut');
+      const RefreshCw = makeIcon('RefreshCw');
+      const Filter = makeIcon('Filter');
+      const Users = makeIcon('Users');
+      const CalendarCheck = makeIcon('CalendarCheck');
+      const AlertTriangle = makeIcon('AlertTriangle');
+      const ChevronRight = makeIcon('ChevronRight');
+
+      // -----------------------------------------------------------------------
+      // Application Components
+      // -----------------------------------------------------------------------
+      const STATUS_OPTIONS = [
+  { value: '접수대기', label: '접수대기', color: 'amber' },
+  { value: '일정확정', label: '일정확정', color: 'blue' },
+  { value: '상담완료', label: '상담완료', color: 'emerald' },
+  { value: '취소', label: '취소', color: 'slate' },
+];
+
+const MEMO_DELIMITER = '\n\n--- [교사 비공개 메모] ---\n';
+
+function parseLogAndMemo(rawLog = '') {
+  if (!rawLog) return { summary: '', privateMemo: '' };
+  const idx = rawLog.indexOf(MEMO_DELIMITER);
+  if (idx === -1) {
+    return { summary: rawLog, privateMemo: '' };
+  }
+  return {
+    summary: rawLog.slice(0, idx),
+    privateMemo: rawLog.slice(idx + MEMO_DELIMITER.length),
+  };
+}
+
+function combineLogAndMemo(summary, privateMemo) {
+  const cleanSummary = summary.trim();
+  const cleanMemo = privateMemo.trim();
+  if (!cleanMemo) return cleanSummary;
+  return `${cleanSummary}${MEMO_DELIMITER}${cleanMemo}`;
+}
+
+function CounselingModal({
+  record,
+  onClose,
+  onSave,
+  isSubmitting,
+}) {
+  const parsed = parseLogAndMemo(record?.counseling_log || '');
+
+  const [status, setStatus] = useState(record?.status || '접수대기');
+  const [counselingDate, setCounselingDate] = useState(record?.counseling_date || '');
+  const [counselingSummary, setCounselingSummary] = useState(parsed.summary);
+  const [privateMemo, setPrivateMemo] = useState(parsed.privateMemo);
+  const [followUp, setFollowUp] = useState(record?.follow_up || '');
+
+  useEffect(() => {
+    if (!record) return;
+    const nextParsed = parseLogAndMemo(record.counseling_log || '');
+    setStatus(record.status || '접수대기');
+    setCounselingDate(record.counseling_date || '');
+    setCounselingSummary(nextParsed.summary);
+    setPrivateMemo(nextParsed.privateMemo);
+    setFollowUp(record.follow_up || '');
+  }, [record]);
+
+  if (!record) return null;
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+
+    onSave({
+      id: record.id,
+      status,
+      counseling_date: counselingDate.trim(),
+      counseling_log: combineLogAndMemo(counselingSummary, privateMemo),
+      follow_up: followUp.trim(),
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden my-auto">
+        {/* 모달 헤더 */}
+        <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded bg-indigo-100 text-indigo-700">
+                {record.id}
+              </span>
+              <span className="text-xs text-slate-500">신청일시: {record.created_at}</span>
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mt-1">
+              {record.student_name} ({record.student_id}) 학생 상담 상세 및 일지 기록
+            </h3>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 transition-colors"
+            aria-label="닫기"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* 모달 본문 */}
+        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-6">
+          {/* 학생 사전 신청 정보 요약 박스 */}
+          <div className="bg-slate-50 rounded-xl border border-slate-200/80 p-4 space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div>
+                <span className="text-slate-400 flex items-center gap-1">
+                  <Hash className="w-3.5 h-3.5" /> 학번 / 이름
+                </span>
+                <p className="font-semibold text-slate-800 mt-0.5">
+                  {record.student_id} · {record.student_name}
+                </p>
+              </div>
+              <div>
+                <span className="text-slate-400 flex items-center gap-1">
+                  <Phone className="w-3.5 h-3.5" /> 연락처
+                </span>
+                <p className="font-semibold text-slate-800 mt-0.5">{record.contact}</p>
+              </div>
+              <div>
+                <span className="text-slate-400 flex items-center gap-1">
+                  <Tag className="w-3.5 h-3.5" /> 상담 분야 / 방식
+                </span>
+                <p className="font-semibold text-slate-800 mt-0.5">
+                  {record.category} ({record.method})
+                </p>
+              </div>
+              <div>
+                <span className="text-slate-400 flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5" /> 희망 일시
+                </span>
+                <p className="font-semibold text-indigo-700 mt-0.5">{record.preferred_date}</p>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-200/70 pt-3">
+              <span className="text-xs font-semibold text-slate-500 flex items-center gap-1 mb-1">
+                <MessageSquare className="w-3.5 h-3.5 text-indigo-500" />
+                학생 사전 고민 및 질문 내용
+              </span>
+              <p className="text-sm text-slate-800 bg-white p-3 rounded-lg border border-slate-200/70 whitespace-pre-wrap leading-relaxed">
+                {record.inquiry}
+              </p>
+            </div>
+          </div>
+
+          {/* 진행 상태 및 실제 상담 일자 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                상담 진행 상태 변경
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {STATUS_OPTIONS.map((opt) => {
+                  const active = status === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setStatus(opt.value)}
+                      className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                        active
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-1.5">
+                <Calendar className="w-4 h-4 text-indigo-500" />
+                <span>확정 / 실제 상담 날짜 및 시간</span>
+              </label>
+              <input
+                type="text"
+                placeholder="예: 2026-11-27 14:00 (상담실 2호)"
+                value={counselingDate}
+                onChange={(e) => setCounselingDate(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+              <p className="text-[11px] text-slate-400 mt-1">
+                학생 조회 화면의 &apos;확정/실제 상담 일자&apos;란에도 안내됩니다.
+              </p>
+            </div>
+          </div>
+
+          {/* 상담 내용 요약 */}
+          <div>
+            <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-1.5">
+              <FileEdit className="w-4 h-4 text-indigo-500" />
+              <span>상담 일지 (상담 내용 요약)</span>
+            </label>
+            <textarea
+              rows={4}
+              placeholder="실제 진행된 상담의 주요 대화 내용, 학생의 정서 및 학업 상태 관찰 내용을 기록하세요."
+              value={counselingSummary}
+              onChange={(e) => setCounselingSummary(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm leading-relaxed focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            />
+          </div>
+
+          {/* 후속 조치 사항 (Action Item) */}
+          <div>
+            <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-1.5">
+              <ListChecks className="w-4 h-4 text-emerald-600" />
+              <span>후속 조치 사항 (Action Item / 학생 안내 사항)</span>
+            </label>
+            <textarea
+              rows={2}
+              placeholder="다음 상담 일정, 추천 학습/진로 프로그램, 학생에게 전달할 피드백 등을 작성하세요."
+              value={followUp}
+              onChange={(e) => setFollowUp(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm leading-relaxed focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            />
+          </div>
+
+          {/* 교사 비공개 메모 */}
+          <div>
+            <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-1.5">
+              <Lock className="w-4 h-4 text-amber-600" />
+              <span>교사 전용 비공개 메모</span>
+            </label>
+            <textarea
+              rows={2}
+              placeholder="학부모 연락 필요 여부, 외부 전문기관 연계 검토 등 교사만 열람하는 비공개 메모를 입력하세요."
+              value={privateMemo}
+              onChange={(e) => setPrivateMemo(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-amber-200 bg-amber-50/40 text-sm leading-relaxed focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+            />
+          </div>
+
+          {/* 모달 하단 버튼 */}
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-semibold transition-colors"
+            >
+              취소
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-sm font-semibold shadow-sm transition-colors"
+            >
+              <Save className="w-4 h-4" />
+              <span>{isSubmitting ? '저장 중...' : 'Google Sheets에 저장'}</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+const CATEGORIES = [
+  '학업/성적',
+  '진로/취업',
+  '학교생활/교우관계',
+  '심리/정서',
+  '기타',
+];
+
+const METHODS = [
+  { value: '대면', label: '대면 상담', desc: '상담실 직접 방문' },
+  { value: '비대면 Zoom', label: '비대면 Zoom', desc: '온라인 화상 미팅' },
+  { value: '전화', label: '전화 상담', desc: '유선 통화 진행' },
+];
+
+const TIME_SLOTS = [
+  '09:00 - 10:00',
+  '10:00 - 11:00',
+  '11:00 - 12:00',
+  '13:00 - 14:00',
+  '14:00 - 15:00',
+  '15:00 - 16:00',
+  '16:00 - 17:00',
+  '기타 (사전 고민란에 기재)',
+];
+
+function StudentForm({
+  onSubmitApplication,
+  isSubmitting,
+  lastFeedback,
+  onGoToStatusCheck,
+}) {
+  // 기본 희망 날짜: 내일 날짜
+  const getTomorrowDate = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  };
+
+  const [formData, setFormData] = useState({
+    student_id: '',
+    student_name: '',
+    contact: '',
+    date_part: getTomorrowDate(),
+    time_part: TIME_SLOTS[0],
+    category: CATEGORIES[0],
+    method: METHODS[0].value,
+    inquiry: '',
+  });
+
+  const [errors, setErrors] = useState({});
+  const [submittedReceipt, setSubmittedReceipt] = useState(null);
+  const handledEventRef = useRef(null);
+
+  // 제출 성공 피드백 감지 시 폼 초기화 및 접수증 카드 표시
+  useEffect(() => {
+    if (
+      lastFeedback &&
+      lastFeedback.action === 'SUBMIT_APPLICATION' &&
+      lastFeedback.success &&
+      lastFeedback.eventId !== handledEventRef.current
+    ) {
+      handledEventRef.current = lastFeedback.eventId;
+      setSubmittedReceipt(lastFeedback.createdRecord || { message: lastFeedback.message });
+      setFormData({
+        student_id: '',
+        student_name: '',
+        contact: '',
+        date_part: getTomorrowDate(),
+        time_part: TIME_SLOTS[0],
+        category: CATEGORIES[0],
+        method: METHODS[0].value,
+        inquiry: '',
+      });
+      setErrors({});
+    }
+  }, [lastFeedback]);
+
+  const validate = () => {
+    const nextErrors = {};
+    if (!formData.student_id.trim()) nextErrors.student_id = '학번을 입력해주세요.';
+    if (!formData.student_name.trim()) nextErrors.student_name = '이름을 입력해주세요.';
+    if (!formData.contact.trim()) nextErrors.contact = '연락처 또는 이메일을 입력해주세요.';
+    if (!formData.date_part) nextErrors.date_part = '상담 희망 날짜를 선택해주세요.';
+    if (!formData.inquiry.trim()) {
+      nextErrors.inquiry = '사전 질문이나 고민 내용을 간략히 작성해주세요.';
+    }
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!validate() || isSubmitting) return;
+
+    const preferred_date = `${formData.date_part} (${formData.time_part})`;
+    onSubmitApplication({
+      student_id: formData.student_id.trim(),
+      student_name: formData.student_name.trim(),
+      contact: formData.contact.trim(),
+      preferred_date,
+      category: formData.category,
+      method: formData.method,
+      inquiry: formData.inquiry.trim(),
+    });
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* 좌측 안내 패널 */}
+      <div className="lg:col-span-1 space-y-4">
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-semibold mb-3">
+            <Info className="w-3.5 h-3.5" />
+            <span>상담 신청 안내</span>
+          </div>
+          <h2 className="text-lg font-bold text-slate-900 mb-2">
+            편안하게 고민을 나누어 보세요
+          </h2>
+          <p className="text-sm text-slate-600 leading-relaxed mb-5">
+            학업, 진로, 교우관계, 정서적 어려움 등 어떤 주제든 괜찮습니다. 신청서를 작성해 주시면 담당 교사가 확인 후 일정을 확정해 안내드립니다.
+          </p>
+
+          <div className="space-y-3 border-t border-slate-100 pt-4 text-xs text-slate-600">
+            <div className="flex items-start gap-2.5">
+              <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center shrink-0 mt-0.5">
+                1
+              </span>
+              <div>
+                <p className="font-semibold text-slate-800">비밀 보장 원칙</p>
+                <p className="text-slate-500 mt-0.5">
+                  작성된 모든 신청 내용과 상담 기록은 철저히 비공개로 보호됩니다.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-2.5">
+              <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center shrink-0 mt-0.5">
+                2
+              </span>
+              <div>
+                <p className="font-semibold text-slate-800">일정 확정 안내</p>
+                <p className="text-slate-500 mt-0.5">
+                  접수 후 상단 &apos;신청 내역 조회&apos; 탭에서 학번과 이름으로 진행 상태를 확인할 수 있습니다.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 신청 완료 접수증 카드 */}
+        {submittedReceipt && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center gap-2 text-emerald-800 font-bold text-base mb-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              <span>상담 신청 접수 완료</span>
+            </div>
+            {submittedReceipt.id && (
+              <div className="bg-white/80 rounded-xl p-3 border border-emerald-200/70 text-xs space-y-1 text-slate-700 mb-3">
+                <p>
+                  <span className="font-semibold text-slate-500">접수번호:</span>{' '}
+                  <span className="font-mono font-bold text-indigo-700">{submittedReceipt.id}</span>
+                </p>
+                <p>
+                  <span className="font-semibold text-slate-500">신청자:</span>{' '}
+                  {submittedReceipt.student_name} ({submittedReceipt.student_id})
+                </p>
+                <p>
+                  <span className="font-semibold text-slate-500">희망일시:</span>{' '}
+                  {submittedReceipt.preferred_date}
+                </p>
+                <p>
+                  <span className="font-semibold text-slate-500">분야/방식:</span>{' '}
+                  {submittedReceipt.category} · {submittedReceipt.method}
+                </p>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={onGoToStatusCheck}
+              className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors"
+            >
+              <span>내 신청 현황 바로 조회하기</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* 우측 메인 상담 신청 폼 */}
+      <div className="lg:col-span-2">
+        <form
+          onSubmit={handleSubmit}
+          className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6"
+        >
+          <div className="border-b border-slate-100 pb-4">
+            <h2 className="text-xl font-bold text-slate-900">학생 상담 신청서</h2>
+            <p className="text-sm text-slate-500 mt-1">
+              필수 항목(*)을 정확히 입력한 후 아래 제출 버튼을 눌러주세요.
+            </p>
+          </div>
+
+          {/* 1. 기본 인적 사항 */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-1.5">
+                <Hash className="w-4 h-4 text-indigo-500" />
+                <span>학번 *</span>
+              </label>
+              <input
+                type="text"
+                placeholder="예: 20261015"
+                value={formData.student_id}
+                onChange={(e) => setFormData({ ...formData, student_id: e.target.value })}
+                className={`w-full px-3.5 py-2.5 rounded-xl border text-sm transition-colors focus:outline-none focus:ring-2 ${
+                  errors.student_id
+                    ? 'border-rose-400 focus:ring-rose-200'
+                    : 'border-slate-300 focus:border-indigo-500 focus:ring-indigo-100'
+                }`}
+              />
+              {errors.student_id && (
+                <p className="text-xs text-rose-600 mt-1">{errors.student_id}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-1.5">
+                <User className="w-4 h-4 text-indigo-500" />
+                <span>이름 *</span>
+              </label>
+              <input
+                type="text"
+                placeholder="예: 김민준"
+                value={formData.student_name}
+                onChange={(e) => setFormData({ ...formData, student_name: e.target.value })}
+                className={`w-full px-3.5 py-2.5 rounded-xl border text-sm transition-colors focus:outline-none focus:ring-2 ${
+                  errors.student_name
+                    ? 'border-rose-400 focus:ring-rose-200'
+                    : 'border-slate-300 focus:border-indigo-500 focus:ring-indigo-100'
+                }`}
+              />
+              {errors.student_name && (
+                <p className="text-xs text-rose-600 mt-1">{errors.student_name}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-1.5">
+                <Phone className="w-4 h-4 text-indigo-500" />
+                <span>연락처 / 이메일 *</span>
+              </label>
+              <input
+                type="text"
+                placeholder="010-1234-5678 또는 이메일"
+                value={formData.contact}
+                onChange={(e) => setFormData({ ...formData, contact: e.target.value })}
+                className={`w-full px-3.5 py-2.5 rounded-xl border text-sm transition-colors focus:outline-none focus:ring-2 ${
+                  errors.contact
+                    ? 'border-rose-400 focus:ring-rose-200'
+                    : 'border-slate-300 focus:border-indigo-500 focus:ring-indigo-100'
+                }`}
+              />
+              {errors.contact && (
+                <p className="text-xs text-rose-600 mt-1">{errors.contact}</p>
+              )}
+            </div>
+          </div>
+
+          {/* 2. 상담 희망 날짜 및 시간대 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-1.5">
+                <Calendar className="w-4 h-4 text-indigo-500" />
+                <span>상담 희망 날짜 *</span>
+              </label>
+              <input
+                type="date"
+                value={formData.date_part}
+                onChange={(e) => setFormData({ ...formData, date_part: e.target.value })}
+                className={`w-full px-3.5 py-2.5 rounded-xl border text-sm transition-colors focus:outline-none focus:ring-2 ${
+                  errors.date_part
+                    ? 'border-rose-400 focus:ring-rose-200'
+                    : 'border-slate-300 focus:border-indigo-500 focus:ring-indigo-100'
+                }`}
+              />
+              {errors.date_part && (
+                <p className="text-xs text-rose-600 mt-1">{errors.date_part}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-1.5">
+                <Clock className="w-4 h-4 text-indigo-500" />
+                <span>희망 시간대 *</span>
+              </label>
+              <select
+                value={formData.time_part}
+                onChange={(e) => setFormData({ ...formData, time_part: e.target.value })}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              >
+                {TIME_SLOTS.map((slot) => (
+                  <option key={slot} value={slot}>
+                    {slot}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* 3. 상담 분야 선택 */}
+          <div>
+            <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-2">
+              <Tag className="w-4 h-4 text-indigo-500" />
+              <span>상담 분야 선택 *</span>
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {CATEGORIES.map((cat) => {
+                const selected = formData.category === cat;
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, category: cat })}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${
+                      selected
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 4. 상담 방식 선택 */}
+          <div>
+            <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-2">
+              <Video className="w-4 h-4 text-indigo-500" />
+              <span>상담 방식 선택 *</span>
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {METHODS.map((m) => {
+                const selected = formData.method === m.value;
+                return (
+                  <button
+                    key={m.value}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, method: m.value })}
+                    className={`text-left p-3.5 rounded-xl border transition-all ${
+                      selected
+                        ? 'bg-indigo-50/70 border-indigo-500 ring-2 ring-indigo-100'
+                        : 'bg-white border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="font-semibold text-sm text-slate-900">{m.label}</div>
+                    <div className="text-xs text-slate-500 mt-0.5">{m.desc}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 5. 사전 질문 및 고민 내용 */}
+          <div>
+            <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-1.5">
+              <MessageSquareText className="w-4 h-4 text-indigo-500" />
+              <span>사전 질문 및 고민 내용 *</span>
+            </label>
+            <textarea
+              rows={5}
+              placeholder="상담을 통해 이야기 나누고 싶은 주제, 현재 겪고 있는 고민, 혹은 희망하는 추가 시간대 등을 자유롭게 적어주세요."
+              value={formData.inquiry}
+              onChange={(e) => setFormData({ ...formData, inquiry: e.target.value })}
+              className={`w-full px-4 py-3 rounded-xl border text-sm leading-relaxed transition-colors focus:outline-none focus:ring-2 ${
+                errors.inquiry
+                  ? 'border-rose-400 focus:ring-rose-200'
+                  : 'border-slate-300 focus:border-indigo-500 focus:ring-indigo-100'
+              }`}
+            />
+            {errors.inquiry && (
+              <p className="text-xs text-rose-600 mt-1">{errors.inquiry}</p>
+            )}
+          </div>
+
+          {/* 제출 버튼 */}
+          <div className="pt-2 flex justify-end">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-semibold text-sm shadow-sm transition-all"
+            >
+              <Send className="w-4 h-4" />
+              <span>{isSubmitting ? '상담 신청 접수 중...' : '상담 신청서 제출하기'}</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+function StatusBadge({ status }) {
+  const normalized = status || '접수대기';
+  if (normalized === '일정확정' || normalized === '확정') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+        <Calendar className="w-3.5 h-3.5" />
+        일정확정
+      </span>
+    );
+  }
+  if (normalized === '상담완료' || normalized === '완료') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+        <CheckCircle2 className="w-3.5 h-3.5" />
+        상담완료
+      </span>
+    );
+  }
+  if (normalized === '취소') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+        <XCircle className="w-3.5 h-3.5" />
+        취소
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+      <Clock className="w-3.5 h-3.5" />
+      접수대기
+    </span>
+  );
+}
+
+function StudentStatusCheck({
+  onSearchStatus,
+  studentRecords,
+  isSubmitting,
+  lastFeedback,
+}) {
+  const [studentId, setStudentId] = useState('');
+  const [studentName, setStudentName] = useState('');
+  const [hasSearched, setHasSearched] = useState(false);
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    if (!studentId.trim() || !studentName.trim() || isSubmitting) return;
+    setHasSearched(true);
+    onSearchStatus({
+      student_id: studentId.trim(),
+      student_name: studentName.trim(),
+    });
+  };
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-6">
+      {/* 검색 입력 카드 */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm">
+        <h2 className="text-xl font-bold text-slate-900">내 상담 신청 내역 조회</h2>
+        <p className="text-sm text-slate-500 mt-1 mb-6">
+          상담 신청 시 입력한 <strong>학번</strong>과 <strong>이름</strong>을 입력하면 본인의 신청 진행 상태를 확인할 수 있습니다.
+        </p>
+
+        <form onSubmit={handleSearch} className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+          <div className="sm:col-span-5">
+            <label className="sr-only">학번</label>
+            <div className="relative">
+              <Hash className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                required
+                placeholder="학번 입력 (예: 20261015)"
+                value={studentId}
+                onChange={(e) => setStudentId(e.target.value)}
+                className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+            </div>
+          </div>
+
+          <div className="sm:col-span-4">
+            <label className="sr-only">이름</label>
+            <div className="relative">
+              <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                required
+                placeholder="이름 입력 (예: 김민준)"
+                value={studentName}
+                onChange={(e) => setStudentName(e.target.value)}
+                className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+            </div>
+          </div>
+
+          <div className="sm:col-span-3">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full h-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-sm font-semibold transition-colors"
+            >
+              <Search className="w-4 h-4" />
+              <span>{isSubmitting ? '조회 중...' : '조회하기'}</span>
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* 조회 결과 목록 */}
+      {hasSearched && !isSubmitting && (
+        <div className="space-y-4">
+          {studentRecords.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center">
+              <FileText className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+              <p className="text-base font-semibold text-slate-700">
+                일치하는 상담 신청 내역이 없습니다.
+              </p>
+              <p className="text-xs text-slate-500 mt-1">
+                학번과 이름을 정확히 입력했는지 다시 한 번 확인해주세요.
+              </p>
+            </div>
+          ) : (
+            studentRecords.map((rec) => (
+              <div
+                key={rec.id}
+                className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono font-semibold px-2.5 py-1 rounded-md bg-slate-100 text-slate-600">
+                      {rec.id}
+                    </span>
+                    <span className="text-xs text-slate-400">신청일: {rec.created_at}</span>
+                  </div>
+                  <StatusBadge status={rec.status} />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                  <div className="flex items-center gap-2 text-slate-700">
+                    <Tag className="w-4 h-4 text-indigo-500 shrink-0" />
+                    <span>
+                      <strong className="font-semibold">분야:</strong> {rec.category}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-700">
+                    <Video className="w-4 h-4 text-indigo-500 shrink-0" />
+                    <span>
+                      <strong className="font-semibold">방식:</strong> {rec.method}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-700">
+                    <Calendar className="w-4 h-4 text-indigo-500 shrink-0" />
+                    <span>
+                      <strong className="font-semibold">희망일시:</strong> {rec.preferred_date}
+                    </span>
+                  </div>
+                </div>
+
+                {rec.counseling_date && (
+                  <div className="bg-blue-50/70 border border-blue-200/80 rounded-xl px-4 py-2.5 text-sm text-blue-900">
+                    <strong>확정/실제 상담 일자:</strong> {rec.counseling_date}
+                  </div>
+                )}
+
+                <div className="bg-slate-50 rounded-xl p-4 text-sm text-slate-700">
+                  <p className="text-xs font-semibold text-slate-500 mb-1">내가 작성한 사전 고민 내용</p>
+                  <p className="whitespace-pre-wrap leading-relaxed">{rec.inquiry}</p>
+                </div>
+
+                {rec.follow_up && (
+                  <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-xl p-4 text-sm text-emerald-900">
+                    <p className="text-xs font-semibold text-emerald-700 mb-1">
+                      교사 안내 / 후속 조치 사항
+                    </p>
+                    <p className="whitespace-pre-wrap leading-relaxed">{rec.follow_up}</p>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ==========================================
+const STATUS_FILTERS = ['전체', '접수대기', '일정확정', '상담완료', '취소'];
+const CATEGORY_FILTERS = [
+  '전체',
+  '학업/성적',
+  '진로/취업',
+  '학교생활/교우관계',
+  '심리/정서',
+  '기타',
+];
+
+function normalizeStatus(raw) {
+  if (raw === '대기' || raw === '접수대기') return '접수대기';
+  if (raw === '확정' || raw === '일정확정') return '일정확정';
+  if (raw === '완료' || raw === '상담완료') return '상담완료';
+  if (raw === '취소') return '취소';
+  return raw || '접수대기';
+}
+
+function StatusPill({ status }) {
+  const s = normalizeStatus(status);
+  const styles = {
+    접수대기: 'bg-amber-50 text-amber-700 border-amber-200',
+    일정확정: 'bg-blue-50 text-blue-700 border-blue-200',
+    상담완료: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    취소: 'bg-slate-100 text-slate-600 border-slate-200',
+  };
+  return (
+    <span
+      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+        styles[s] || styles['접수대기']
+      }`}
+    >
+      {s}
+    </span>
+  );
+}
+
+function AdminDashboard({
+  isAdmin,
+  records,
+  dbError,
+  isSubmitting,
+  onLogin,
+  onLogout,
+  onRefresh,
+  onUpdateRecord,
+}) {
+  const [password, setPassword] = useState('');
+  const [statusFilter, setStatusFilter] = useState('전체');
+  const [categoryFilter, setCategoryFilter] = useState('전체');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedRecord, setSelectedRecord] = useState(null);
+
+  // 대시보드 상단 요약 통계 계산
+  const stats = useMemo(() => {
+    const total = records.length;
+    const pending = records.filter((r) => normalizeStatus(r.status) === '접수대기').length;
+    const completed = records.filter((r) => normalizeStatus(r.status) === '상담완료').length;
+
+    // 이번 주(월~일) 예정 건수 계산 (일정확정 상태이면서 날짜가 이번 주이거나, 일정확정 전체 건수)
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0(일) ~ 6(토)
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999);
+
+    const thisWeekScheduled = records.filter((r) => {
+      const st = normalizeStatus(r.status);
+      if (st !== '일정확정' && st !== '접수대기') return false;
+      const dateStr = (r.counseling_date || r.preferred_date || '').slice(0, 10);
+      const parsed = new Date(dateStr);
+      if (Number.isNaN(parsed.getTime())) {
+        return st === '일정확정';
+      }
+      return parsed >= weekStart && parsed <= weekEnd;
+    }).length;
+
+    return { total, pending, thisWeekScheduled, completed };
+  }, [records]);
+
+  // 필터 및 검색 적용된 목록
+  const filteredRecords = useMemo(() => {
+    return records.filter((rec) => {
+      const normalized = normalizeStatus(rec.status);
+      if (statusFilter !== '전체' && normalized !== statusFilter) return false;
+      if (categoryFilter !== '전체' && rec.category !== categoryFilter) return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase();
+        const matchName = (rec.student_name || '').toLowerCase().includes(q);
+        const matchId = (rec.student_id || '').toLowerCase().includes(q);
+        const matchInquiry = (rec.inquiry || '').toLowerCase().includes(q);
+        if (!matchName && !matchId && !matchInquiry) return false;
+      }
+      return true;
+    });
+  }, [records, statusFilter, categoryFilter, searchQuery]);
+
+  // ---------------------------------------------------------------------------
+  // 미인증 상태: 교사/관리자 로그인 화면 렌더링
+  // ---------------------------------------------------------------------------
+  if (!isAdmin) {
+    const handleLoginSubmit = (e) => {
+      e.preventDefault();
+      if (!password.trim() || isSubmitting) return;
+      onLogin(password);
+    };
+
+    return (
+      <div className="max-w-md mx-auto mt-8">
+        <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto mb-4">
+            <Lock className="w-6 h-6" />
+          </div>
+          <h2 className="text-xl font-bold text-center text-slate-900">
+            교사 / 관리자 인증
+          </h2>
+          <p className="text-sm text-center text-slate-500 mt-1.5 mb-6">
+            상담 기록 열람 및 일지 관리를 위해 관리자 비밀번호를 입력해주세요.
+          </p>
+
+          <form onSubmit={handleLoginSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                관리자 비밀번호
+              </label>
+              <input
+                type="password"
+                required
+                placeholder="비밀번호 입력"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-semibold text-sm shadow-sm transition-colors"
+            >
+              {isSubmitting ? '인증 확인 중...' : '관리자 대시보드 접속'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // 인증 완료 상태: 대시보드 메인 화면 렌더링
+  // ---------------------------------------------------------------------------
+  return (
+    <div className="space-y-6">
+      {/* DB 연결 오류 경고 배너 */}
+      {dbError && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-start gap-3 text-rose-800 text-sm">
+          <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-bold">Google Sheets 연동 오류</p>
+            <p className="mt-0.5 text-xs leading-relaxed">{dbError}</p>
+          </div>
+        </div>
+      )}
+
+      {/* 상단 액션 바 */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900">상담 기록 관리 대시보드</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Google Sheets (<code className="font-mono text-indigo-600">Counseling_Records</code>) 실시간 연동 중
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={isSubmitting}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-colors"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSubmitting ? 'animate-spin' : ''}`} />
+            <span>새로고침</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onLogout}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold shadow-2xs transition-colors"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>로그아웃</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 1. 대시보드 요약 카드 4종 */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500">전체 신청 건수</span>
+            <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center">
+              <Users className="w-4 h-4" />
+            </div>
+          </div>
+          <p className="text-2xl font-bold text-slate-900 mt-2">{stats.total}건</p>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-amber-700">접수 대기 중</span>
+            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+              <Clock className="w-4 h-4" />
+            </div>
+          </div>
+          <p className="text-2xl font-bold text-amber-600 mt-2">{stats.pending}건</p>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-blue-700">이번 주 예정</span>
+            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+              <CalendarCheck className="w-4 h-4" />
+            </div>
+          </div>
+          <p className="text-2xl font-bold text-blue-600 mt-2">{stats.thisWeekScheduled}건</p>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-emerald-700">상담 완료</span>
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <CheckCircle2 className="w-4 h-4" />
+            </div>
+          </div>
+          <p className="text-2xl font-bold text-emerald-600 mt-2">{stats.completed}건</p>
+        </div>
+      </div>
+
+      {/* 2. 필터 및 검색 컨트롤 바 */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs space-y-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          {/* 상태별 필터 탭 */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {STATUS_FILTERS.map((st) => (
+              <button
+                key={st}
+                type="button"
+                onClick={() => setStatusFilter(st)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  statusFilter === st
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200/70'
+                }`}
+              >
+                {st}
+              </button>
+            ))}
+          </div>
+
+          {/* 분야별 드롭다운 & 검색 인풋 */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <div className="relative">
+              <Filter className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="pl-8 pr-7 py-2 rounded-xl border border-slate-300 bg-white text-xs font-medium text-slate-700 focus:outline-none focus:border-indigo-500"
+              >
+                {CATEGORY_FILTERS.map((cat) => (
+                  <option key={cat} value={cat}>
+                    분야: {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="relative min-w-[220px]">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="학생 이름, 학번, 고민 검색..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-300 text-xs focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. 상담 신청 목록 테이블 */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500">
+                <th className="py-3.5 px-4">상태</th>
+                <th className="py-3.5 px-4">학번 / 이름</th>
+                <th className="py-3.5 px-4">상담 분야</th>
+                <th className="py-3.5 px-4">방식</th>
+                <th className="py-3.5 px-4">희망 일시</th>
+                <th className="py-3.5 px-4">사전 고민 요약</th>
+                <th className="py-3.5 px-4 text-right">관리</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-sm">
+              {filteredRecords.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-12 text-center text-slate-400 text-sm">
+                    조건에 해당하는 상담 신청 내역이 없습니다.
+                  </td>
+                </tr>
+              ) : (
+                filteredRecords.map((rec) => (
+                  <tr
+                    key={rec.id}
+                    onClick={() => setSelectedRecord(rec)}
+                    className="hover:bg-indigo-50/40 cursor-pointer transition-colors"
+                  >
+                    <td className="py-3.5 px-4 whitespace-nowrap">
+                      <StatusPill status={rec.status} />
+                    </td>
+                    <td className="py-3.5 px-4 whitespace-nowrap">
+                      <div className="font-semibold text-slate-900">{rec.student_name}</div>
+                      <div className="text-xs text-slate-400 font-mono">{rec.student_id}</div>
+                    </td>
+                    <td className="py-3.5 px-4 whitespace-nowrap">
+                      <span className="inline-flex px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 text-xs font-medium">
+                        {rec.category}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 whitespace-nowrap text-xs text-slate-600">
+                      {rec.method}
+                    </td>
+                    <td className="py-3.5 px-4 whitespace-nowrap text-xs text-slate-700">
+                      <div>{rec.preferred_date}</div>
+                      {rec.counseling_date && (
+                        <div className="text-[11px] text-blue-600 font-medium mt-0.5">
+                          확정: {rec.counseling_date}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 max-w-xs">
+                      <p className="text-xs text-slate-600 truncate">{rec.inquiry}</p>
+                    </td>
+                    <td className="py-3.5 px-4 whitespace-nowrap text-right">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedRecord(rec);
+                        }}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold transition-colors"
+                      >
+                        <FileEdit className="w-3.5 h-3.5" />
+                        <span>일지/상태</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* 4. 상담 일지 작성 및 상태 업데이트 상세 모달 */}
+      {selectedRecord && (
+        <CounselingModal
+          record={selectedRecord}
+          isSubmitting={isSubmitting}
+          onClose={() => setSelectedRecord(null)}
+          onSave={(updatedData) => {
+            onUpdateRecord(updatedData);
+            setSelectedRecord(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ==========================================
+function App() {
+  // Streamlit Python 백엔드로부터 전달받는 상태(props)
+  const [stProps, setStProps] = useState({
+    isAdmin: false,
+    records: [],
+    studentRecords: [],
+    feedback: null,
+    dbError: null,
+  });
+
+  // UI 탭 상태: 'apply' (학생 상담 신청) | 'status' (내 신청 내역 조회) | 'admin' (교사/관리자 대시보드)
+  const [activeTab, setActiveTab] = useState('apply');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [toast, setToast] = useState(null);
+  const lastFeedbackIdRef = useRef(null);
+  const containerRef = useRef(null);
+
+  // Streamlit Python 백엔드로 이벤트 전송하는 헬퍼 함수
+  const sendEventToPython = useCallback((action, payload = {}) => {
+    const eventId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    setIsSubmitting(true);
+    Streamlit.setComponentValue({
+      eventId,
+      action,
+      payload,
+    });
+    return eventId;
+  }, []);
+
+  // Streamlit RENDER_EVENT 수신 및 초기 핸드셰이크
+  useEffect(() => {
+    const onRender = (event) => {
+      const args = event?.detail?.args || {};
+      setStProps({
+        isAdmin: Boolean(args.isAdmin),
+        records: Array.isArray(args.records) ? args.records : [],
+        studentRecords: Array.isArray(args.studentRecords) ? args.studentRecords : [],
+        feedback: args.feedback || null,
+        dbError: args.dbError || null,
+      });
+      setIsSubmitting(false);
+
+      // Python에서 새 피드백이 도착한 경우 토스트 메시지 표시
+      const fb = args.feedback;
+      if (fb && fb.eventId && fb.eventId !== lastFeedbackIdRef.current) {
+        lastFeedbackIdRef.current = fb.eventId;
+        setToast({
+          type: fb.success ? 'success' : 'error',
+          message: fb.message,
+          action: fb.action,
+        });
+      }
+    };
+
+    Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, onRender);
+    Streamlit.setComponentReady();
+    Streamlit.setFrameHeight();
+
+    return () => {
+      Streamlit.events.removeEventListener(Streamlit.RENDER_EVENT, onRender);
+    };
+  }, []);
+
+  // DOM 높이 변화 감지하여 Streamlit iframe 높이 자동 조절
+  useEffect(() => {
+    const updateHeight = () => {
+      const height = containerRef.current
+        ? Math.max(containerRef.current.scrollHeight + 24, 680)
+        : 760;
+      Streamlit.setFrameHeight(height);
+    };
+
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+    window.addEventListener('resize', updateHeight);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateHeight);
+    };
+  }, [activeTab, stProps, toast]);
+
+  // 토스트 자동 닫힘 타이머
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 5000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  return (
+    <div ref={containerRef} className="min-h-screen bg-slate-50 pb-10">
+      {/* 상단 네비게이션 헤더 */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm">
+              <GraduationCap className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
+                학생 상담 신청 및 기록 관리 시스템
+              </h1>
+              <p className="text-xs text-slate-500">
+                온라인 상담 예약 접수 · 진행 현황 조회 · 교사 상담 일지 통합 관리
+              </p>
+            </div>
+          </div>
+
+          {/* 탭 전환 버튼 */}
+          <nav className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/80 self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setActiveTab('apply')}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold transition-all ${
+                activeTab === 'apply'
+                  ? 'bg-white text-indigo-600 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <ClipboardEdit className="w-4 h-4" />
+              <span>상담 신청</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('status')}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold transition-all ${
+                activeTab === 'status'
+                  ? 'bg-white text-indigo-600 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Search className="w-4 h-4" />
+              <span>신청 내역 조회</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('admin')}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold transition-all ${
+                activeTab === 'admin'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>교사/관리자</span>
+              {stProps.isAdmin && (
+                <span className="ml-1 w-2 h-2 rounded-full bg-emerald-400" title="인증됨" />
+              )}
+            </button>
+          </nav>
+        </div>
+      </header>
+
+      {/* 전역 알림 토스트 */}
+      {toast && (
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 mt-4">
+          <div
+            className={`flex items-center justify-between gap-3 px-4 py-3 rounded-xl border text-sm font-medium shadow-sm ${
+              toast.type === 'success'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : 'bg-rose-50 border-rose-200 text-rose-800'
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              {toast.type === 'success' ? (
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+              )}
+              <span>{toast.message}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setToast(null)}
+              className="text-slate-400 hover:text-slate-600 p-1"
+              aria-label="알림 닫기"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 메인 콘텐츠 영역 */}
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 mt-6">
+        {activeTab === 'apply' && (
+          <StudentForm
+            onSubmitApplication={(data) => sendEventToPython('SUBMIT_APPLICATION', data)}
+            isSubmitting={isSubmitting}
+            lastFeedback={stProps.feedback}
+            onGoToStatusCheck={() => setActiveTab('status')}
+          />
+        )}
+
+        {activeTab === 'status' && (
+          <StudentStatusCheck
+            onSearchStatus={(query) => sendEventToPython('CHECK_STUDENT_STATUS', query)}
+            studentRecords={stProps.studentRecords}
+            isSubmitting={isSubmitting}
+            lastFeedback={stProps.feedback}
+          />
+        )}
+
+        {activeTab === 'admin' && (
+          <AdminDashboard
+            isAdmin={stProps.isAdmin}
+            records={stProps.records}
+            dbError={stProps.dbError}
+            isSubmitting={isSubmitting}
+            onLogin={(password) => sendEventToPython('ADMIN_LOGIN', { password })}
+            onLogout={() => sendEventToPython('ADMIN_LOGOUT')}
+            onRefresh={() => sendEventToPython('REFRESH_RECORDS')}
+            onUpdateRecord={(updated) => sendEventToPython('UPDATE_RECORD', updated)}
+          />
+        )}
+      </main>
+    </div>
+  );
+}
+
+      ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+  </body>
+</html>
